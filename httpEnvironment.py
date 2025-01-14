@@ -92,7 +92,7 @@ async def create_env(sb3_parameters: SB3Parameters):
     print(sb3_parameters.actionSpaceSize, sb3_parameters.observationVectorSize)
     env = HttpEnv(sb3_parameters.observationVectorSize, sb3_parameters.actionSpaceSize)
     trainer = Trainer(env)
-    return "Env created"
+    return Response("Env created", media_type="text/plain")
 
 
 class LearningParameters(BaseModel):
@@ -104,7 +104,7 @@ class LearningParameters(BaseModel):
 async def learn(learning_parameters: LearningParameters, background_tasks: BackgroundTasks):
     global trainer
     background_tasks.add_task(trainer.learn, learning_parameters.totalTimeSteps)
-    return "training started"
+    return Response("training started", media_type="text/plain")
 
 
 # starts training Agent for one episode only
