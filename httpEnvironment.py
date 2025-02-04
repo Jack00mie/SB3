@@ -13,6 +13,7 @@ import torch as th
 from fastapi import BackgroundTasks, FastAPI, Response
 
 # start with: uvicorn httpEnvironment:app --host 0.0.0.0 --port 8095
+# start TensorBoard with: tensorboard --logdir ./logs
 
 JAVA_PORT = 8094
 PORT = 8095

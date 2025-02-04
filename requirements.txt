@@ -3,3 +3,4 @@ gymnasium
 requests
 stable_baselines3
 fastapi [standard]
+tensorboard
