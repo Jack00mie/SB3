@@ -60,8 +60,11 @@ class EvaluationOptions(BaseModel):
     evaluateEveryEpisodes: int = Field(description="How often should be evaluated.", gt=0)
     numberOfGames: int = Field(description="Number of games for evaluation.", gt=0)
     opponent: str = Field(description="Name of opponent used for evaluation.")
-    safeBest: bool = Field(description="Safe Policy if better")
+    saveBest: bool = Field(description="Save Policy if better")
 
+
+def get_save_dir() -> str:
+    return f"C:/Users/leonp/IdeaProjects/GBG/agents"
 
 
 class Agent:
@@ -71,15 +74,19 @@ class Agent:
     latest_policy: BasePolicy = None
     use_self_play: bool = False
     use_latest_policy = 0.2
+    game_name: str
+    agent_type: str
 
     use_model_lock = threading.Lock()
 
-    def __init__(self, agent_id: UUID, model: BaseAlgorithm):
+    def __init__(self, agent_id: UUID, model: BaseAlgorithm, agent_type: str, game_name: str):
         self.agent_id = agent_id
         self.baseAlgorithm = model
+        self.game_name = game_name
+        self.agent_type = agent_type
 
     @classmethod
-    def form_parameters(cls, agent_id, env: gym.Env, agent: str, base_parameters: dict, agent_parameters: dict,
+    def form_parameters(cls, agent_id, env: gym.Env, agent_type: str, game_name: str, base_parameters: dict, agent_parameters: dict,
                         network_parameters: dict):
 
         if "activation_fn" in network_parameters:
@@ -104,14 +111,14 @@ class Agent:
 
         print(network_parameters)
 
-        match agent:
+        match agent_type:
             case "DQN":
                 model = DQN("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters)
             case "PPO":
                 model = PPO("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters)
 
         print(model.policy)
-        return cls(agent_id, model)
+        return cls(agent_id, model, agent_type, game_name)
 
     def learn(self, total_time_steps: int, evaluation_options: EvaluationOptions, self_play_parameters: [SelfPlayParameters | None] = None):
         print(total_time_steps)
@@ -122,17 +129,17 @@ class Agent:
             callbacks.append(self.prepare_for_self_play(self_play_parameters))
 
         if evaluation_options is not None:
-            callbacks.append(self.prepare_for_evalutaion(evaluation_options))
+            callbacks.append(self.prepare_for_evaluation(evaluation_options))
 
         self.baseAlgorithm.learn(total_time_steps, callback=callbacks)
         requests.post(f"http://127.0.0.1:{JAVA_PORT}/trainingFinished", "Training finished")
         print("Training complete.")
 
-    def safe_model_if_better(self, win_rate: float):
+    def save_model_if_better(self, win_rate: float):
         print(win_rate)
         # TODO
 
-    def safe_eval_results_to_tensorboard(self, win_rate: float):
+    def save_eval_results_to_tensorboard(self, win_rate: float):
         print(win_rate)
         # TODO
 
@@ -148,7 +155,7 @@ class Agent:
         self.use_latest_policy = self_play_parameters.useLatestPolicy
         return add_to_self_play_callback
 
-    def prepare_for_evalutaion(self, evaluation_options: EvaluationOptions) -> BaseCallback:
+    def prepare_for_evaluation(self, evaluation_options: EvaluationOptions) -> BaseCallback:
         callback = EveryNTimesteps(n_steps=evaluation_options.evaluateEveryEpisodes,
                                    callback=EvaluationCallback(self, evaluation_options))
         return callback
@@ -203,6 +210,19 @@ class Agent:
 
         return int(best_action), available_values
 
+    def save(self):
+        try:
+            path = f"{get_save_dir()}/{self.game_name}/SB3Agent/{self.agent_type}/{str(self.agent_id)}/{get_date_and_time()}"
+            self.baseAlgorithm.save(path)
+            print(f"Policy saved: {path}")
+        except Exception as err:
+            print(f"Policy coud not be saved:")
+            print(f"{err}")
+
+
+
+
+
 
 
 class AddToSelfPlay(BaseCallback):
@@ -230,9 +250,9 @@ class EvaluationCallback(BaseCallback):
         print("WINRATE: ")
         print(response.json())
         win_rate: float = response.json()["winRate"]
-        if self.evaluation_options.safeBest:
-            self.agent.safe_model_if_better(win_rate)
-        self.agent.safe_eval_results_to_tensorboard(win_rate)
+        if self.evaluation_options.saveBest:
+            self.agent.save_model_if_better(win_rate)
+        self.agent.save_eval_results_to_tensorboard(win_rate)
         return True
 
 
@@ -299,6 +319,7 @@ class SB3Parameters(BaseModel):
     agent_id: UUID = Field(
         description="The agents Id used for loading and saving and also impotent when several agents are used.")
     agentType: str = Field(description="Type of sb3 agent that should be created.")  # TODO: enums
+    gameName: str = Field(description="Name of the game. e.g: TicTacToe.")
 
     baseParameters: Dict[str, Union[str, int, float, bool, None]] = Field(
         description="Parameters every sb3 agent has in common.")
@@ -307,6 +328,7 @@ class SB3Parameters(BaseModel):
     networkParameters: Dict[str, Union[str, int, float, bool, list, None]] = Field(
         description="Parameter to creat the neural Netowrk inside the agent.")  # TODO: link sb3 webside with furthe information
     environmentParameters: EnvironmentParameters = Field(description="Parameters needed to creat the gym.Env")
+
 
 
 @app.post("/agents")
@@ -323,7 +345,10 @@ async def create_agent(sb3_parameters: SB3Parameters):
     print(sb3_parameters.agentParameters)
     print(sb3_parameters.networkParameters)
     env = HttpEnv(sb3_parameters.environmentParameters)
-    agents[sb3_parameters.agent_id] = Agent.form_parameters(sb3_parameters.agent_id, env, sb3_parameters.agentType,
+    agents[sb3_parameters.agent_id] = Agent.form_parameters(sb3_parameters.agent_id,
+                                                            env,
+                                                            sb3_parameters.agentType,
+                                                            sb3_parameters.gameName,
                                                             sb3_parameters.baseParameters,
                                                             sb3_parameters.agentParameters,
                                                             sb3_parameters.networkParameters)
@@ -387,20 +412,13 @@ def get_date_and_time() -> str:
     dt_string = now.strftime(DATE_FORMAT)
     return dt_string
 
-def get_latest_date_string(date_strings):
-    return max(date_strings, key=lambda x: datetime.strptime(x, DATE_FORMAT))
-
-
-class SafeRequest(BaseModel):
-    agentType: str = Field(description="Name of the agent. e.g: PPO, DQN.")
-    gameName: str = Field(description="Name of the game. e.g: TTT, C4.")
+def get_latest_file(files: str):
+    return max(files, key=lambda x: datetime.strptime(x, f"{DATE_FORMAT}.zip"))
 
 
 @app.post("/agents/{agent_id}/save")
-async def save(agent_id: UUID, save_request: SafeRequest): # TODO: put agetntype GaemName in creat
-    global agents
-    root_dir = os.path.dirname(os.path.abspath(__file__))
-    agents[agent_id].baseAlgorithm.save(root_dir + f"/saved_models/{save_request.gameName}/{save_request.agentType}/{str(agent_id)}/{get_date_and_time()}")
+async def save(agent_id: UUID): # TODO: put agetntype GaemName in creat
+    agents[agent_id].save()
 
 
 class LoadRequest(BaseModel):
@@ -413,19 +431,23 @@ class LoadRequest(BaseModel):
 async def load(agent_id: UUID, load_request: LoadRequest):
     global agents
     print(load_request.agentType)
-    root_dir = os.path.dirname(os.path.abspath(__file__))
     if load_request.path is None:
-        files = os.listdir()
-        latest = get_latest_date_string(files)
-        path = root_dir + f"/saved_models/{load_request.gameName}/{load_request.agentType}/{str(agent_id)}/{latest}"
+        agent_path = f"{get_save_dir()}/{load_request.gameName}/SB3Agent/{load_request.agentType}/{str(agent_id)}"
+        files = os.listdir(f"{agent_path}/")
+        latest = get_latest_file(files)
+        path = f"{agent_path}/{latest}"
     else:
         path = load_request.path
 
+    print(path)
+
     match load_request.agentType:
         case "DQN":
-            agents[agent_id] = Agent(agent_id, DQN.load(path))
+            agents[agent_id] = Agent(agent_id, DQN.load(path), load_request.agentType, load_request.gameName)
         case "PPO":
-            agents[agent_id] = Agent(agent_id, PPO.load(path))
+            agents[agent_id] = Agent(agent_id, PPO.load(path), load_request.agentType, load_request.gameName)
+
+    print(f"Agent Loaded: {path}")
     print(agent_id)
     print(agents)
 
