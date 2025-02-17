@@ -64,7 +64,7 @@ class EvaluationOptions(BaseModel):
 
 
 def get_save_dir() -> str:
-    return f"C:/Users/leonp/IdeaProjects/GBG/agents"
+    return f"C:/Users/Leon Püschel/IdeaProjects/GBG/agents"
 
 
 class Agent:
@@ -76,6 +76,7 @@ class Agent:
     use_latest_policy = 0.2
     game_name: str
     agent_type: str
+    best_win_rate: float = 0
 
     use_model_lock = threading.Lock()
 
@@ -95,8 +96,6 @@ class Agent:
             match network_parameters["activation_fn"]:
                 case "ReLU":
                     activation_fn = th.nn.ReLU
-                case "Linear":
-                    activation_fn = th.nn.Linear
                 case "LeakyReLU":
                     activation_fn = th.nn.LeakyReLU
                 case "Sigmoid":
@@ -136,12 +135,14 @@ class Agent:
         print("Training complete.")
 
     def save_model_if_better(self, win_rate: float):
-        print(win_rate)
-        # TODO
+        if win_rate > self.best_win_rate:
+            self.best_win_rate = win_rate
+            self.save()
+
 
     def save_eval_results_to_tensorboard(self, win_rate: float):
-        print(win_rate)
-        # TODO
+        self.baseAlgorithm.logger.record("win_rate", win_rate)
+
 
     def prepare_for_self_play(self, self_play_parameters: SelfPlayParameters) -> EveryNTimesteps:
         self.use_self_play = True
@@ -216,7 +217,7 @@ class Agent:
             self.baseAlgorithm.save(path)
             print(f"Policy saved: {path}")
         except Exception as err:
-            print(f"Policy coud not be saved:")
+            print(f"Policy could not be saved:")
             print(f"{err}")
 
 
@@ -417,7 +418,7 @@ def get_latest_file(files: str):
 
 
 @app.post("/agents/{agent_id}/save")
-async def save(agent_id: UUID): # TODO: put agetntype GaemName in creat
+async def save(agent_id: UUID):
     agents[agent_id].save()
 
 
