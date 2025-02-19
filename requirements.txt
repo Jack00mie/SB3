@@ -1,6 +1,10 @@
-numpy
-gymnasium
-requests
-stable_baselines3
-fastapi [standard]
+numpy~=1.26.4
+gymnasium~=1.0.0
+requests~=2.32.3
+stable_baselines3~=2.4.0
+fastapi[standard]~=0.115.6
 tensorboard
+PyYAML~=6.0.2
+torch~=2.5.1
+pydantic~=2.10.4
+uvicorn~=0.34.0

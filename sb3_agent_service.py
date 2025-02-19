@@ -1,0 +1,206 @@
+from agent_trainer import Agent
+from environment_connector import EnvironmentConnector
+import utils
+import os
+import signal
+from uuid import UUID
+from typing import Dict, Union, Optional
+import numpy as np
+from pydantic import BaseModel, Field
+from stable_baselines3 import DQN, PPO
+from fastapi import BackgroundTasks, FastAPI, Response
+
+
+# start with: uvicorn sb3_agent_service:app --host 0.0.0.0 --port 8095
+# start TensorBoard with: tensorboard --logdir ./logs
+
+app = FastAPI()
+
+agents: dict[UUID, Agent] = dict()
+
+
+class SelfPlayParameters(BaseModel):
+    """
+    The Parameters used for self play.
+    """
+    policyWindowSize: int = Field(description="How many old policy's/ models should be saved.", gt=0)
+    addPolicyEveryXSteps: int = Field(description="Add current the policy every X steps. Determines how old policy should be are.",
+                                      gt=0)
+    useLatestPolicy: float = Field(description="How often should the latest policy be used for self play.", ge=0, le=1)
+
+
+class EvaluationOptions(BaseModel):
+    """
+    The Options used for evaluation.
+    """
+    evaluateEveryEpisodes: int = Field(description="How often should be evaluated.", gt=0)
+    numberOfGames: int = Field(description="Number of games for evaluation.", gt=0)
+    opponent: str = Field(description="Name of opponent used for evaluation.")
+    saveBest: bool = Field(description="Save Policy if better")
+
+
+class EnvironmentParameters(BaseModel):
+    """
+    The Parameters used to creat a gym.env.
+    """
+    actionSpaceSize: int = Field(gt=0, description="Size of all actions that can be available.")
+    observationRangeStarts: list[int] = Field(description="The starts of the integer values of the observationVector.")
+    observationRangeSizes: list[int] = Field(
+        description="Size of the ranges the values of the observationVector can fall in.")
+
+
+class SB3Parameters(BaseModel):
+    """
+    The Parameters used to creat a gym.env and a stable baseline agent.
+    """
+    agent_id: UUID = Field(
+        description="The agents Id used for loading and saving and also impotent when several agents are used.")
+    agentType: str = Field(description="Type of sb3 agent that should be created.")  # TODO: enums
+    gameName: str = Field(description="Name of the game. e.g: TicTacToe.")
+
+    baseParameters: Dict[str, Union[str, int, float, bool, None]] = Field(
+        description="Parameters every sb3 agent has in common.")
+    agentParameters: Dict[str, Union[str, int, float, bool, None]] = Field(
+        description="Special parameters specific to agentType.")
+    networkParameters: Dict[str, Union[str, int, float, bool, list, None]] = Field(
+        description="Parameter to creat the neural Netowrk inside the agent.")
+    environmentParameters: EnvironmentParameters = Field(description="Parameters needed to creat the gym.Env")
+
+
+@app.post("/agents")
+async def create_agent(sb3_parameters: SB3Parameters):
+    """
+
+    :param sb3_parameters:
+    :return:
+    """
+    global agents
+    print(sb3_parameters.agent_id)
+    print(sb3_parameters.environmentParameters.actionSpaceSize, sb3_parameters.agentType)
+    print(sb3_parameters.baseParameters)
+    print(sb3_parameters.agentParameters)
+    print(sb3_parameters.networkParameters)
+    env = EnvironmentConnector(sb3_parameters.environmentParameters)
+    agents[sb3_parameters.agent_id] = Agent.form_parameters(sb3_parameters.agent_id,
+                                                            env,
+                                                            sb3_parameters.agentType,
+                                                            sb3_parameters.gameName,
+                                                            sb3_parameters.baseParameters,
+                                                            sb3_parameters.agentParameters,
+                                                            sb3_parameters.networkParameters)
+    return Response("Env created", media_type="text/plain")
+
+
+class LearningParameters(BaseModel):
+    totalTimeSteps: int = Field(gt=0)
+    evaluationOptions: EvaluationOptions
+    selfPlayParameters: Optional[SelfPlayParameters] = Field(
+        "Parameters to use for self play. Only required if you want to use self play.")
+
+
+# starts training Agent for total number of time steps
+@app.post("/agents/{agent_id}/learn")
+async def learn(agent_id: UUID, learning_parameters: LearningParameters, background_tasks: BackgroundTasks):
+    """
+
+    :param agent_id:
+    :param learning_parameters:
+    :param background_tasks:
+    :return:
+    """
+    global agents
+    print("--- Learning Parameters ---")
+    print(f"total episodes: {learning_parameters.totalTimeSteps}")
+    print(learning_parameters.selfPlayParameters)
+    print(learning_parameters.evaluationOptions)
+    print("---------------------------")
+    background_tasks.add_task(agents[agent_id].learn, total_time_steps=learning_parameters.totalTimeSteps, self_play_parameters=learning_parameters.selfPlayParameters, evaluation_options=learning_parameters.evaluationOptions)
+    return Response("training started", media_type="text/plain")
+
+
+# starts training Agent for one episode only
+@app.post("/trainAgentOneEpisode")
+async def train_agent_one_episode(background_tasks: BackgroundTasks):
+    background_tasks.add_task()
+
+
+class PredictRequest(BaseModel):
+    observation: list[int] = Field(description="Observation without any preprocessing.")
+    availableActions: list[int] = Field(description="Available actions for Action Mask: List of actions (ints) that are available")
+    deterministic: bool = Field(description="If ture takes get the Action with the maximum value, if false get a action with the probepility of the value.", default=True)
+
+
+class PredictResponse(BaseModel):
+    action: int = Field(description="Best action.")
+    actionValues: list[float] = Field(description="Values of Action with not available actions cut out.")
+
+
+@app.post("/agents/{agent_id}/predict", response_model=PredictResponse)
+async def predict(agent_id: UUID, predict_request: PredictRequest) -> PredictResponse:
+    global agents
+    agent = agents[agent_id]
+
+    action, action_values = agent.predict(np.array(predict_request.observation), np.array(predict_request.availableActions), predict_request.deterministic)
+    response = PredictResponse(action=action, actionValues= action_values)
+    return response
+
+
+@app.post("/agents/{agent_id}/save")
+async def save(agent_id: UUID):
+    agents[agent_id].save()
+
+
+class LoadRequest(BaseModel):
+    agentType: str = Field(description="Name of the agent. e.g: PPO, DQN.")
+    gameName: str = Field(None, description="Name of the game. e.g: TTT, C4.")
+    path: str = Field(None, description="Load a specific model. If None load latest.")
+
+
+@app.post("/agents/{agent_id}/load")
+async def load(agent_id: UUID, load_request: LoadRequest):
+    global agents
+    print(load_request.agentType)
+    if load_request.path is None:
+        agent_path = f"{utils.get_save_dir()}/{load_request.gameName}/SB3Agent/{load_request.agentType}/{str(agent_id)}"
+        files = os.listdir(f"{agent_path}/")
+        latest = utils.get_latest_file(files)
+        path = f"{agent_path}/{latest}"
+    else:
+        path = load_request.path
+
+    print(path)
+
+    match load_request.agentType:
+        case "DQN":
+            agents[agent_id] = Agent(agent_id, DQN.load(path), load_request.agentType, load_request.gameName)
+        case "PPO":
+            agents[agent_id] = Agent(agent_id, PPO.load(path), load_request.agentType, load_request.gameName)
+
+    print(f"Agent Loaded: {path}")
+    print(agent_id)
+    print(agents)
+
+
+class SelfPlayResponse(BaseModel):
+    action: int = Field(description="Best action.")
+
+
+@app.post("/agents/{agent_id}/selfPlay", response_model=SelfPlayResponse)
+async def selfPlay(agent_id: UUID, predict_request: PredictRequest) -> SelfPlayResponse:
+    global agents
+    action, _ = agents[agent_id].predict(np.array(predict_request.observation), np.array(predict_request.availableActions), predict_request.deterministic, True)
+    self_play_response = SelfPlayResponse(action=action)
+    print(f"self play: {action}")
+    return self_play_response
+
+
+def exit_app():
+    print("Killing process.")
+    os.kill(os.getpid(), signal.SIGINT)
+
+
+
+if __name__ == '__main__':
+    import uvicorn
+
+    uvicorn.run(app, host='0.0.0.0', port=utils.get_port())
