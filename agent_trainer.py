@@ -19,6 +19,7 @@ from stable_baselines3.common.callbacks import BaseCallback, EveryNTimesteps
 import torch as th
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.logger import HParam
+from sb3_contrib import MaskablePPO
 
 
 
@@ -72,11 +73,14 @@ class Agent:
                 model = DQN("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters)
             case "PPO":
                 model = PPO("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters)
+            case "MPPO":
+                model = MaskablePPO("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters)
 
         network_parameters_flatten: dict[str, int] = {}
-        for i, layers in enumerate(network_parameters["net_arch"]):
-            network_parameters_flatten[f"layer_{i}"] = layers
-        hyper_parameters.update(network_parameters_flatten)
+        if "net_arch" in network_parameters:
+            for i, layers in enumerate(network_parameters["net_arch"]):
+                network_parameters_flatten[f"layer_{i}"] = layers
+            hyper_parameters.update(network_parameters_flatten)
 
         print(model.policy)
         return cls(agent_id, model, agent_type, game_name, hyper_parameters)
@@ -84,7 +88,7 @@ class Agent:
     def learn(self, total_time_steps: int, evaluation_options: EvaluationOptions, self_play_parameters: [SelfPlayParameters | None] = None):
         print(total_time_steps)
         # prepare callbacks
-        callbacks: list[BaseCallback]= []
+        callbacks: list[BaseCallback] = []
         # update self play callback
 
         if self_play_parameters is not None:
@@ -144,6 +148,12 @@ class Agent:
                 values = policy.q_net(tensor)
                 values = values.detach().to('cpu').numpy()
         elif type(self.baseAlgorithm) is PPO:
+            with th.no_grad():
+                tensor = policy.obs_to_tensor(observation)[0]
+                distribution = policy.get_distribution(tensor)
+                probs = distribution.distribution.probs
+                values = probs.detach().to('cpu').numpy()
+        elif type(self.baseAlgorithm) is MaskablePPO:
             with th.no_grad():
                 tensor = policy.obs_to_tensor(observation)[0]
                 distribution = policy.get_distribution(tensor)

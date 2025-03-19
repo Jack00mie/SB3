@@ -1,8 +1,10 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:  # Only imports the below statements during type checking
     from sb3_agent_service import EnvironmentParameters
 import utils
+from sb3_contrib.common.envs import InvalidActionEnvDiscrete
 
 import numpy as np
 import gymnasium as gym
@@ -44,3 +46,17 @@ class EnvironmentConnector(gym.Env):
         observation_vector = np.array(step_response.observationVector)
         print(f"step_response: {step_response}")
         return observation_vector, step_response.reward, step_response.terminated, step_response.truncated, step_response.info
+
+    def action_masks(self) -> np.ndarray[bool]:
+        """
+        only used by MaskablePPO
+        :return: action masks witch true if valid and false if invalid
+        """
+        response = requests.get(f"http://127.0.0.1:{utils.get_gbg_port()}/availableActions")
+        action_mask = np.zeros(9, dtype=bool)
+        for a in response.json():
+            action_mask[a] = True
+
+        print(f"action_mask_json: {response.json()}")
+        print(f"action mask: {action_mask}")
+        return action_mask

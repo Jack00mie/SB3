@@ -127,21 +127,24 @@ async def train_agent_one_episode(background_tasks: BackgroundTasks):
 class PredictRequest(BaseModel):
     observation: list[int] = Field(description="Observation without any preprocessing.")
     availableActions: list[int] = Field(description="Available actions for Action Mask: List of actions (ints) that are available")
-    deterministic: bool = Field(description="If ture takes get the Action with the maximum value, if false get a action with the probepility of the value.", default=True)
+    deterministic: bool = Field(description="If ture returns the Action with the maximum value, if false get a action with the probepility of the value. Diffrent to GBG deteministic in getNextAction2()", default=True)
 
 
 class PredictResponse(BaseModel):
     action: int = Field(description="Best action.")
-    actionValues: list[float] = Field(description="Values of Action with not available actions cut out.")
+    actionValues: list[float] = Field(description="Values of Actions with not available actions cut out.")
 
 
 @app.post("/agents/{agent_id}/predict", response_model=PredictResponse)
 async def predict(agent_id: UUID, predict_request: PredictRequest) -> PredictResponse:
+    """
+    Respond the best available action and values of all available actions. If deterministic is true returns  the action with the highest value else returns a action choosen with the value as a probepility.
+    """
     global agents
     agent = agents[agent_id]
 
     action, action_values = agent.predict(np.array(predict_request.observation), np.array(predict_request.availableActions), predict_request.deterministic)
-    response = PredictResponse(action=action, actionValues= action_values)
+    response = PredictResponse(action=action, actionValues=action_values)
     return response
 
 
@@ -158,6 +161,9 @@ class LoadRequest(BaseModel):
 
 @app.post("/agents/{agent_id}/load")
 async def load(agent_id: UUID, load_request: LoadRequest):
+    """
+    loads
+    """
     global agents
     print(load_request.agentType)
     if load_request.path is None:
@@ -187,6 +193,9 @@ class SelfPlayResponse(BaseModel):
 
 @app.post("/agents/{agent_id}/selfPlay", response_model=SelfPlayResponse)
 async def selfPlay(agent_id: UUID, predict_request: PredictRequest) -> SelfPlayResponse:
+    """
+    Respond with the best available action form a random selfPlayPolicy. If deterministic is true returns  the action with the highest value else returns a action choosen with the value as a probepility.
+    """
     global agents
     action, _ = agents[agent_id].predict(np.array(predict_request.observation), np.array(predict_request.availableActions), predict_request.deterministic, True)
     self_play_response = SelfPlayResponse(action=action)
