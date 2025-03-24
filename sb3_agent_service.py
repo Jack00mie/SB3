@@ -8,6 +8,7 @@ from typing import Dict, Union, Optional
 import numpy as np
 from pydantic import BaseModel, Field
 from stable_baselines3 import DQN, PPO
+from sb3_contrib import MaskablePPO
 from fastapi import BackgroundTasks, FastAPI, Response
 
 
@@ -70,8 +71,8 @@ class SB3Parameters(BaseModel):
 @app.post("/agents")
 async def create_agent(sb3_parameters: SB3Parameters):
     """
-
-    :param sb3_parameters:
+    Create a new agent environment for the agent.
+    :param sb3_parameters: Parameters needed to creat the agent and the env for the agent
     :return:
     """
     global agents
@@ -88,25 +89,23 @@ async def create_agent(sb3_parameters: SB3Parameters):
                                                             sb3_parameters.baseParameters,
                                                             sb3_parameters.agentParameters,
                                                             sb3_parameters.networkParameters)
-    return Response("Env created", media_type="text/plain")
+    return Response("Agent created", media_type="text/plain", status_code=201)
 
 
 class LearningParameters(BaseModel):
+    """
+    Learning parameters needed to start the training process of an Agent.
+    """
     totalTimeSteps: int = Field(gt=0)
     evaluationOptions: EvaluationOptions
     selfPlayParameters: Optional[SelfPlayParameters] = Field(
         "Parameters to use for self play. Only required if you want to use self play.")
 
 
-# starts training Agent for total number of time steps
 @app.post("/agents/{agent_id}/learn")
 async def learn(agent_id: UUID, learning_parameters: LearningParameters, background_tasks: BackgroundTasks):
     """
-
-    :param agent_id:
-    :param learning_parameters:
-    :param background_tasks:
-    :return:
+    starts training the Agent.
     """
     global agents
     print("--- Learning Parameters ---")
@@ -118,19 +117,19 @@ async def learn(agent_id: UUID, learning_parameters: LearningParameters, backgro
     return Response("training started", media_type="text/plain")
 
 
-# starts training Agent for one episode only
-@app.post("/trainAgentOneEpisode")
-async def train_agent_one_episode(background_tasks: BackgroundTasks):
-    background_tasks.add_task()
-
-
 class PredictRequest(BaseModel):
+    """
+    Request used to predict the next action for an Agent.
+    """
     observation: list[int] = Field(description="Observation without any preprocessing.")
     availableActions: list[int] = Field(description="Available actions for Action Mask: List of actions (ints) that are available")
-    deterministic: bool = Field(description="If ture returns the Action with the maximum value, if false get a action with the probepility of the value. Diffrent to GBG deteministic in getNextAction2()", default=True)
+    deterministic: bool = Field(default=True, description="If ture returns the Action with the maximum value, if false get a action with the probepility of the value. Diffrent to GBG deteministic in getNextAction2()")
 
 
 class PredictResponse(BaseModel):
+    """
+    Response model to a predict request.
+    """
     action: int = Field(description="Best action.")
     actionValues: list[float] = Field(description="Values of Actions with not available actions cut out.")
 
@@ -150,11 +149,17 @@ async def predict(agent_id: UUID, predict_request: PredictRequest) -> PredictRes
 
 @app.post("/agents/{agent_id}/save")
 async def save(agent_id: UUID):
+    """
+    Saves the agents policy at the location specified in config.yaml file under "gbg_save_location: ".
+    """
     agents[agent_id].save()
 
 
 class LoadRequest(BaseModel):
-    agentType: str = Field(description="Name of the agent. e.g: PPO, DQN.")
+    """
+    Request with parameters needed to load an agent.
+    """
+    agentType: str = Field(description="Name of the agent. e.g: PPO, DQN, MPPO.")
     gameName: str = Field(None, description="Name of the game. e.g: TTT, C4.")
     path: str = Field(None, description="Load a specific model. If None load latest.")
 
@@ -162,7 +167,7 @@ class LoadRequest(BaseModel):
 @app.post("/agents/{agent_id}/load")
 async def load(agent_id: UUID, load_request: LoadRequest):
     """
-    loads
+    Load a specific model. If no directory path is provided loads latest.
     """
     global agents
     print(load_request.agentType)
@@ -181,6 +186,8 @@ async def load(agent_id: UUID, load_request: LoadRequest):
             agents[agent_id] = Agent(agent_id, DQN.load(path), load_request.agentType, load_request.gameName)
         case "PPO":
             agents[agent_id] = Agent(agent_id, PPO.load(path), load_request.agentType, load_request.gameName)
+        case "MPPO":
+            agents[agent_id] = Agent(agent_id, MaskablePPO.load(path), load_request.agentType, load_request.gameName)
 
     print(f"Agent Loaded: {path}")
     print(agent_id)
@@ -188,13 +195,16 @@ async def load(agent_id: UUID, load_request: LoadRequest):
 
 
 class SelfPlayResponse(BaseModel):
-    action: int = Field(description="Best action.")
+    """
+    Response model for a selfPlay Request.
+    """
+    action: int = Field(description="Chosen action by the agent.")
 
 
 @app.post("/agents/{agent_id}/selfPlay", response_model=SelfPlayResponse)
 async def selfPlay(agent_id: UUID, predict_request: PredictRequest) -> SelfPlayResponse:
     """
-    Respond with the best available action form a random selfPlayPolicy. If deterministic is true returns  the action with the highest value else returns a action choosen with the value as a probepility.
+    Respond with the best available action form a random selfPlayPolicy. If deterministic is true returns the action with the highest value else returns a action choosen with the value as a probepility.
     """
     global agents
     action, _ = agents[agent_id].predict(np.array(predict_request.observation), np.array(predict_request.availableActions), predict_request.deterministic, True)
@@ -203,12 +213,13 @@ async def selfPlay(agent_id: UUID, predict_request: PredictRequest) -> SelfPlayR
     return self_play_response
 
 
+# stop app
 def exit_app():
     print("Killing process.")
     os.kill(os.getpid(), signal.SIGINT)
 
 
-
+# starts the app
 if __name__ == '__main__':
     import uvicorn
 

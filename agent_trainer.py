@@ -24,6 +24,9 @@ from sb3_contrib import MaskablePPO
 
 
 class Agent:
+    """
+    Acts like a wrapper for a SB3 agent, with further customizations.
+    """
     agent_id: UUID
     baseAlgorithm: BaseAlgorithm
     self_play_polices: deque[BasePolicy] = None
@@ -48,8 +51,10 @@ class Agent:
 
     @classmethod
     def form_parameters(cls, agent_id, env: gym.Env, agent_type: str, game_name: str, base_parameters: dict, agent_parameters: dict,
-                        network_parameters: dict):
-
+                        network_parameters: dict) -> Agent:
+        """
+        Creates a new agent from parameters passed by GBG through the sb3_agent_service.
+        """
         hyper_parameters = base_parameters | agent_parameters
 
         if "activation_fn" in network_parameters:
@@ -86,6 +91,9 @@ class Agent:
         return cls(agent_id, model, agent_type, game_name, hyper_parameters)
 
     def learn(self, total_time_steps: int, evaluation_options: EvaluationOptions, self_play_parameters: [SelfPlayParameters | None] = None):
+        """
+        Starts the training process.
+        """
         print(total_time_steps)
         # prepare callbacks
         callbacks: list[BaseCallback] = []
@@ -100,7 +108,7 @@ class Agent:
             self.hyper_parameters.update(evaluation_options.dict())
 
 
-        print(self.hyper_parameters) # TODO dict in dict list
+        print(self.hyper_parameters)
 
         callbacks.append(HParamCallback(self.hyper_parameters))
 
@@ -142,6 +150,9 @@ class Agent:
             return random.choice(self.self_play_polices)
 
     def predict_values(self, observation: np.ndarray, policy: BasePolicy) -> np.ndarray:
+        """
+        Predicts the values for each action and returns them.
+        """
         if type(self.baseAlgorithm) is DQN:
             with th.no_grad():
                 tensor = policy.obs_to_tensor(observation)[0]
@@ -164,6 +175,12 @@ class Agent:
         return values[0]
 
     def predict(self, observation: np.ndarray, available_actions: np.ndarray, deterministic: bool = True, for_self_play: bool = False) -> tuple[int, list[float]]:
+        """
+        Predicts the best action and availableActions values for each action and returns them in a 2-tuple.
+        First element of the tuple is the chosen action if deterministic is True takes the action with the best predicted value,
+        if deterministic is False takes an action by probability represent by their value.
+        The second element are the values of just the availableActions, all not available actions are cut out the order stays the same.
+        """
         policy = self.baseAlgorithm.policy
         if for_self_play:
             policy = self.get_self_play_policy()
@@ -184,14 +201,13 @@ class Agent:
             probabilities = probabilities / sum(probabilities)
             best_action = np.random.choice(available_actions, p=probabilities)
 
-        print(f"availbae actions {available_actions}")
-        print(values)
-        print(available_values)
-        print(best_action)
 
         return int(best_action), available_values
 
     def save(self):
+        """
+        Saves the agents policy at the location specified in config.yaml file under "gbg_save_location: "
+        """
         try:
             path = f"{utils.get_save_dir()}/{self.game_name}/SB3Agent/{self.agent_type}/{str(self.agent_id)}/{utils.get_date_and_time()}"
             self.baseAlgorithm.save(path)
@@ -202,6 +218,9 @@ class Agent:
 
 
 class AddToSelfPlay(BaseCallback):
+    """
+    This callback adds the current policy to the self_play_policies of the agent.
+    """
     def _on_step(self) -> bool:
         self.agent.self_play_polices.append(self.agent.latest_policy)
         with self.agent.use_model_lock:
@@ -214,6 +233,10 @@ class AddToSelfPlay(BaseCallback):
 
 
 class EvaluationCallback(BaseCallback):
+    """
+    This callback evaluates the current policy, for that it first uses the /eval endpoint og the GBG SB3 API to get the
+    winrate of the current Agent against a specific opponent and then safe it to TensorBoard.
+    """
     def __init__(self, agent: Agent, evaluation_options: EvaluationOptions, verbose: int = 0):
         super().__init__(verbose)
         self.agent = agent
