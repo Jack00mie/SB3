@@ -137,7 +137,8 @@ class PredictResponse(BaseModel):
 @app.post("/agents/{agent_id}/predict", response_model=PredictResponse)
 async def predict(agent_id: UUID, predict_request: PredictRequest) -> PredictResponse:
     """
-    Respond the best available action and values of all available actions. If deterministic is true returns  the action with the highest value else returns a action choosen with the value as a probepility.
+    Respond the best available action and values of available actions, with not available actions cut out; Order stays the same.
+    If deterministic is true returns the action with the highest value else returns an action chosen with the value as a probepility.
     """
     global agents
     agent = agents[agent_id]
@@ -204,7 +205,8 @@ class SelfPlayResponse(BaseModel):
 @app.post("/agents/{agent_id}/selfPlay", response_model=SelfPlayResponse)
 async def selfPlay(agent_id: UUID, predict_request: PredictRequest) -> SelfPlayResponse:
     """
-    Respond with the best available action form a random selfPlayPolicy. If deterministic is true returns the action with the highest value else returns a action choosen with the value as a probepility.
+    Respond with the best available action form a random selfPlayPolicy. If deterministic is true returns the action
+    with the highest value else returns an action chosen with the value as a probability.
     """
     global agents
     action, _ = agents[agent_id].predict(np.array(predict_request.observation), np.array(predict_request.availableActions), predict_request.deterministic, True)
