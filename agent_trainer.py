@@ -83,8 +83,8 @@ class Agent:
 
         network_parameters_flatten: dict[str, int] = {}
         if "net_arch" in network_parameters:
-            for i, layers in enumerate(network_parameters["net_arch"]):
-                network_parameters_flatten[f"layer_{i}"] = layers
+            for i, layer in enumerate(network_parameters["net_arch"]):
+                network_parameters_flatten[f"layer_{i}"] = layer
             hyper_parameters.update(network_parameters_flatten)
 
         print(model.policy)
@@ -122,8 +122,8 @@ class Agent:
             self.save()
 
 
-    def save_eval_results_to_tensorboard(self, win_rate: float):
-        self.baseAlgorithm.logger.record("win_rate", win_rate)
+    def save_eval_results_to_tensorboard(self, average_reward: float):
+        self.baseAlgorithm.logger.record("average_reward", average_reward)
 
 
     def prepare_for_self_play(self, self_play_parameters: SelfPlayParameters) -> EveryNTimesteps:
@@ -139,7 +139,7 @@ class Agent:
         return add_to_self_play_callback
 
     def prepare_for_evaluation(self, evaluation_options: EvaluationOptions) -> BaseCallback:
-        callback = EveryNTimesteps(n_steps=evaluation_options.evaluateEveryEpisodes,
+        callback = EveryNTimesteps(n_steps=evaluation_options.evaluateEverySteps,
                                    callback=EvaluationCallback(self, evaluation_options))
         return callback
 
@@ -249,10 +249,10 @@ class EvaluationCallback(BaseCallback):
         })
         print("WINRATE: ")
         print(response.json())
-        win_rate: float = response.json()["winRate"]
+        average_reward: float = response.json()["averageReward"]
         if self.evaluation_options.saveBest:
-            self.agent.save_model_if_better(win_rate)
-        self.agent.save_eval_results_to_tensorboard(win_rate)
+            self.agent.save_model_if_better(average_reward)
+        self.agent.save_eval_results_to_tensorboard(average_reward)
         return True
 
 
@@ -279,6 +279,7 @@ class HParamCallback(BaseCallback):
             "rollout/ep_len_mean": 0,
             "train/value_loss": 0.0,
         }
+
         self.logger.record(
             "hparams",
             HParam(hparam_dict, metric_dict),

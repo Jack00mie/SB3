@@ -34,7 +34,7 @@ class EvaluationOptions(BaseModel):
     """
     The Options used for evaluation.
     """
-    evaluateEveryEpisodes: int = Field(description="How often should be evaluated.", gt=0)
+    evaluateEverySteps: int = Field(description="How often should be evaluated.", gt=0)
     numberOfGames: int = Field(description="Number of games for evaluation.", gt=0)
     opponent: str = Field(description="Name of opponent used for evaluation.")
     saveBest: bool = Field(description="Save Policy if better")
