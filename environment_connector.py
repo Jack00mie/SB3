@@ -25,10 +25,10 @@ class StepResponse(BaseModel):
     info: dict[str, str]
 
 
-class EnvironmentConnector(gym.Env):
+class GBGEnvironmentClient(gym.Env):
     """
     Inherent from gym.Env. Connects via HTTP request to the GBG SB3 API, so the games/ environments in the GBG app can be used by SB3 Agents.
-    So it's not a real environment in that sens it just delegates the reset, step functions to the GBG SB3 API.
+    So it does not implement any real logic about the game, it just delegates the reset, step functions to the GBG SB3 API.
     """
     def __init__(self, environment_parameters: EnvironmentParameters):
         self.observation_space = gym.spaces.MultiDiscrete(environment_parameters.observationRangeSizes,
