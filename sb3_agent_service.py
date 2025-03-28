@@ -137,7 +137,8 @@ class PredictResponse(BaseModel):
 @app.post("/agents/{agent_id}/predict", response_model=PredictResponse)
 async def predict(agent_id: UUID, predict_request: PredictRequest) -> PredictResponse:
     """
-    Respond the best available action and values of all available actions. If deterministic is true returns  the action with the highest value else returns a action choosen with the value as a probepility.
+    Respond the best available action and values of available actions, with not available actions cut out; Order stays the same.
+    If deterministic is true returns the action with the highest value else returns an action chosen with the value as a probepility.
     """
     global agents
     agent = agents[agent_id]

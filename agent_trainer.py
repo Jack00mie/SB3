@@ -201,7 +201,6 @@ class Agent:
             probabilities = probabilities / sum(probabilities)
             best_action = np.random.choice(available_actions, p=probabilities)
 
-
         return int(best_action), available_values
 
     def save(self):
