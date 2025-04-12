@@ -1,5 +1,5 @@
 from agent_trainer import Agent
-from environment_connector import EnvironmentConnector
+from environment_connector import GBGEnvironmentClient
 import utils
 import os
 import signal
@@ -81,7 +81,7 @@ async def create_agent(sb3_parameters: SB3Parameters):
     print(sb3_parameters.baseParameters)
     print(sb3_parameters.agentParameters)
     print(sb3_parameters.networkParameters)
-    env = EnvironmentConnector(sb3_parameters.environmentParameters)
+    env = GBGEnvironmentClient(sb3_parameters.environmentParameters)
     agents[sb3_parameters.agent_id] = Agent.form_parameters(sb3_parameters.agent_id,
                                                             env,
                                                             sb3_parameters.agentType,
