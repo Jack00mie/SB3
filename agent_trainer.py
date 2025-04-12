@@ -22,7 +22,6 @@ from stable_baselines3.common.logger import HParam
 from sb3_contrib import MaskablePPO
 
 
-
 class Agent:
     """
     Acts like a wrapper for a SB3 agent, with further customizations.
@@ -113,6 +112,7 @@ class Agent:
         callbacks.append(HParamCallback(self.hyper_parameters))
 
         self.baseAlgorithm.learn(total_time_steps, callback=callbacks)
+
         requests.post(f"http://127.0.0.1:{utils.get_gbg_port()}/trainingFinished", "Training finished")
         print("Training complete.")
 
