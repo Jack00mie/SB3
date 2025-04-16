@@ -116,6 +116,9 @@ class Agent:
         requests.post(f"http://127.0.0.1:{utils.get_gbg_port()}/trainingFinished", "Training finished")
         print("Training complete.")
 
+    def train_one_episode(self):
+
+
     def save_model_if_better(self, win_rate: float):
         if win_rate > self.best_win_rate:
             self.best_win_rate = win_rate
