@@ -36,6 +36,7 @@ class Agent:
     agent_type: str
     best_win_rate: float = 0
     hyper_parameters: dict[str, Any] = {}
+    # callbacks: list[BaseCallback] = []
 
     use_model_lock = threading.Lock()
 
@@ -110,14 +111,48 @@ class Agent:
         print(self.hyper_parameters)
 
         callbacks.append(HParamCallback(self.hyper_parameters))
+        # self.callbacks = callbacks
 
         self.baseAlgorithm.learn(total_time_steps, callback=callbacks)
 
         requests.post(f"http://127.0.0.1:{utils.get_gbg_port()}/trainingFinished", "Training finished")
         print("Training complete.")
 
-    def train_one_episode(self):
-
+    # def train_one_episode_off_policy(self):
+    #     rollout = self.baseAlgorithm.collect_rollouts(
+    #         self.baseAlgorithm.env,
+    #         train_freq=self.baseAlgorithm.train_freq,
+    #         action_noise=self.baseAlgorithm.action_noise,
+    #         callback=self.callbacks,
+    #         learning_starts=self.baseAlgorithm.learning_starts,
+    #         replay_buffer=self.baseAlgorithm.replay_buffer,
+    #         log_interval=4,
+    #     )
+    #
+    #     if self.baseAlgorithm.num_timesteps > 0 and self.baseAlgorithm.num_timesteps > self.baseAlgorithm.learning_starts:
+    #         # If no `gradient_steps` is specified,
+    #         # do as many gradients steps as steps performed during the rollout
+    #         gradient_steps = self.baseAlgorithm.gradient_steps if self.baseAlgorithm.gradient_steps >= 0 else rollout.episode_timesteps
+    #         # Special case when the user passes `gradient_steps=0`
+    #         if gradient_steps > 0:
+    #             self.baseAlgorithm.train(batch_size=self.baseAlgorithm.batch_size, gradient_steps=gradient_steps)
+    #
+    #
+    # def train_one_episode_off_policy(self):
+    #     continue_training = self.baseAlgorithm.collect_rollouts(self.baseAlgorithm.env, callback, self.baseAlgorithm.rollout_buffer, n_rollout_steps=self.baseAlgorithm.n_steps)
+    #
+    #     if not continue_training:
+    #         break
+    #
+    #     iteration += 1
+    #     self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
+    #
+    #     # Display training infos
+    #     if log_interval is not None and iteration % log_interval == 0:
+    #         assert self.ep_info_buffer is not None
+    #         self.dump_logs(iteration)
+    #
+    #     self.train()
 
     def save_model_if_better(self, win_rate: float):
         if win_rate > self.best_win_rate:
