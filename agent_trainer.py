@@ -234,9 +234,15 @@ class Agent:
             available_values.append(float(values[available_action]))
 
         if not deterministic and len(available_actions) > 1:
-            probabilities = np.array(available_values)
-            probabilities = probabilities + abs(probabilities.min())
-            probabilities = probabilities / sum(probabilities)
+            if type(self.baseAlgorithm) is DQN:
+                probabilities = th.softmax(th.tensor(available_values), dim=0).numpy()
+            elif type(self.baseAlgorithm) is PPO: # already done softmax
+                probabilities = np.array(available_values)
+                probabilities = probabilities / sum(probabilities)
+            elif type(self.baseAlgorithm) is MaskablePPO: # already done softmax
+                probabilities = np.array(available_values)
+                probabilities = probabilities / sum(probabilities)
+
             best_action = np.random.choice(available_actions, p=probabilities)
 
         return int(best_action), available_values
