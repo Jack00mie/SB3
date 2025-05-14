@@ -14,6 +14,7 @@ from fastapi import BackgroundTasks, FastAPI, Response
 
 # start with: uvicorn sb3_agent_service:app --host 0.0.0.0 --port 8095
 # start TensorBoard with: tensorboard --logdir ./logs
+# API docs: http://127.0.0.1:8095/docs
 
 app = FastAPI()
 
@@ -47,7 +48,7 @@ class EnvironmentParameters(BaseModel):
     actionSpaceSize: int = Field(gt=0, description="Size of all actions that can be available.")
     observationRangeStarts: list[int] = Field(description="The starts of the integer values of the observationVector.")
     observationRangeSizes: list[int] = Field(
-        description="Size of the ranges the values of the observationVector can fall in.")
+        description="Size of the ranges the integer values of the observationVector can fall in.")
 
 
 class SB3Parameters(BaseModel):
@@ -64,7 +65,7 @@ class SB3Parameters(BaseModel):
     agentParameters: Dict[str, Union[str, int, float, bool, None]] = Field(
         description="Special parameters specific to agentType.")
     networkParameters: Dict[str, Union[str, int, float, bool, list, None]] = Field(
-        description="Parameter to creat the neural Netowrk inside the agent.")
+        description="Parameter to creat the neural Network inside the agent.")
     environmentParameters: EnvironmentParameters = Field(description="Parameters needed to creat the gym.Env")
 
 
