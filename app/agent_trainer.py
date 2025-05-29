@@ -55,6 +55,15 @@ class Agent:
         """
         Creates a new agent from parameters passed by GBG through the sb3_agent_service.
         """
+        print(th.version.cuda)
+        print(th.cuda.is_available())
+        if th.cuda.is_available():
+            print(f"Number of GPUs available: {th.cuda.device_count()}")
+            for i in range(th.cuda.device_count()):
+                print(f"GPU {i}: {th.cuda.get_device_name(i)}")
+        else:
+            print("No GPU devices available.")
+
         hyper_parameters = base_parameters | agent_parameters
 
         if "activation_fn" in network_parameters:
@@ -71,6 +80,7 @@ class Agent:
                     activation_fn = th.nn.Tanh
             network_parameters["activation_fn"] = activation_fn
 
+        print("network_parameters:")
         print(network_parameters)
 
         match agent_type:
@@ -87,6 +97,7 @@ class Agent:
                 network_parameters_flatten[f"layer_{i}"] = layer
             hyper_parameters.update(network_parameters_flatten)
 
+        print("Network:")
         print(model.policy)
         return cls(agent_id, model, agent_type, game_name, hyper_parameters)
 
@@ -94,28 +105,30 @@ class Agent:
         """
         Starts the training process.
         """
-        print(total_time_steps)
+        print(f"Training started for total time steps: {total_time_steps}")
         # prepare callbacks
         callbacks: list[BaseCallback] = []
         # update self play callback
 
         if self_play_parameters is not None:
             callbacks.append(self.prepare_for_self_play(self_play_parameters))
-            self.hyper_parameters.update(self_play_parameters.dict())
+            self_play_parameters_dict: dict = {f"self_play_parameters/{key}": value for key, value in self_play_parameters.dict().items()}
+            self.hyper_parameters.update(self_play_parameters_dict)
 
         if evaluation_options is not None:
             callbacks.append(self.prepare_for_evaluation(evaluation_options))
-            self.hyper_parameters.update(evaluation_options.dict())
+            evaluation_options_dict: dict = {f"evaluation_options/{key}": value for key, value in evaluation_options.dict().items()}
+            self.hyper_parameters.update(evaluation_options_dict)
 
 
-        print(self.hyper_parameters)
+        print(f"Hyperparameters: {self.hyper_parameters}")
 
         callbacks.append(HParamCallback(self.hyper_parameters))
         # self.callbacks = callbacks
 
         self.baseAlgorithm.learn(total_time_steps, callback=callbacks)
 
-        requests.post(f"http://127.0.0.1:{utils.get_gbg_port()}/trainingFinished", "Training finished")
+        requests.post(f"http://{utils.get_gbg_ip()}:{utils.get_gbg_port()}/trainingFinished", "Training finished")
         print("Training complete.")
 
     # def train_one_episode_off_policy(self):
@@ -160,8 +173,14 @@ class Agent:
             self.save()
 
 
-    def save_eval_results_to_tensorboard(self, average_reward: float):
-        self.baseAlgorithm.logger.record("average_reward", average_reward)
+    def save_eval_results_to_tensorboard(self, wins: int, ties: int, losses: int, average_reward: float):
+        total_number_of_games = wins + losses + ties
+        self.baseAlgorithm.logger.record("eval_results/total_number_of_games", total_number_of_games)
+        self.baseAlgorithm.logger.record("eval_results/win_ratio", wins/total_number_of_games)
+        self.baseAlgorithm.logger.record("eval_results/tie_ratio", ties/total_number_of_games)
+        self.baseAlgorithm.logger.record("eval_results/lose_ratio", losses/total_number_of_games)
+        self.baseAlgorithm.logger.record("eval_results/average_reward", average_reward)
+
 
 
     def prepare_for_self_play(self, self_play_parameters: SelfPlayParameters) -> EveryNTimesteps:
@@ -209,7 +228,6 @@ class Agent:
                 probs = distribution.distribution.probs
                 values = probs.detach().to('cpu').numpy()
 
-        print(f"action values: {values[0]}")
         return values[0]
 
     def predict(self, observation: np.ndarray, available_actions: np.ndarray, deterministic: bool = True, for_self_play: bool = False) -> tuple[int, list[float]]:
@@ -286,16 +304,18 @@ class EvaluationCallback(BaseCallback):
         self.evaluation_options = evaluation_options
 
     def _on_step(self) -> bool:
-        response = requests.post(f"http://127.0.0.1:{utils.get_gbg_port()}/eval", json={
+        response = requests.post(f"http://{utils.get_gbg_ip()}:{utils.get_gbg_port()}/eval", json={
             "opponentName": self.evaluation_options.opponent,
-            "numberOfGames": self.evaluation_options.numberOfGames
-        })
-        print("WINRATE: ")
-        print(response.json())
-        average_reward: float = response.json()["averageReward"]
+            "numberOfGames": self.evaluation_options.numberOfGames # number of games for each player Postion. Total number of Game = numberOfgames * Player
+        }).json()
+        total_number_of_games = response["wins"] + response["losses"] + response["ties"]
+        print(f"Time steps: {self.num_timesteps}")
+        print(f"Results of last evaluation with {total_number_of_games} episodes: ")
+        print(response)
+        average_reward: float = response["averageReward"]
         if self.evaluation_options.saveBest:
             self.agent.save_model_if_better(average_reward)
-        self.agent.save_eval_results_to_tensorboard(average_reward)
+        self.agent.save_eval_results_to_tensorboard(response["wins"], response["ties"], response["losses"], average_reward)
         return True
 
 

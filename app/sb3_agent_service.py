@@ -10,9 +10,10 @@ from pydantic import BaseModel, Field
 from stable_baselines3 import DQN, PPO
 from sb3_contrib import MaskablePPO
 from fastapi import BackgroundTasks, FastAPI, Response
+import logging
 
 
-# start with: uvicorn sb3_agent_service:app --host 0.0.0.0 --port 8095
+# start with: uvicorn sb3_agent_service:app --host 0.0.0.0 --port 8095 --log-level warning
 # start TensorBoard with: tensorboard --logdir ./logs
 # API docs: http://127.0.0.1:8095/docs
 
@@ -36,7 +37,7 @@ class EvaluationOptions(BaseModel):
     The Options used for evaluation.
     """
     evaluateEverySteps: int = Field(description="How often should be evaluated.", gt=0)
-    numberOfGames: int = Field(description="Number of games for evaluation.", gt=0)
+    numberOfGames: int = Field(description="numberOfGames for each player on each playerPostion (e.g. X or O in TicTacToe). So Total number of games = numberOfGames * players.", gt=0)
     opponent: str = Field(description="Name of opponent used for evaluation.")
     saveBest: bool = Field(description="Save Policy if better")
 
@@ -77,11 +78,8 @@ async def create_agent(sb3_parameters: SB3Parameters):
     :return:
     """
     global agents
-    print(sb3_parameters.agent_id)
-    print(sb3_parameters.environmentParameters.actionSpaceSize, sb3_parameters.agentType)
-    print(sb3_parameters.baseParameters)
-    print(sb3_parameters.agentParameters)
-    print(sb3_parameters.networkParameters)
+    print(f"Creating new Agent of Type: {sb3_parameters.agentType}")
+    print(f"AgentID : {sb3_parameters.agent_id}")
     env = GBGEnvironmentClient(sb3_parameters.environmentParameters)
     agents[sb3_parameters.agent_id] = Agent.form_parameters(sb3_parameters.agent_id,
                                                             env,
@@ -109,11 +107,7 @@ async def learn(agent_id: UUID, learning_parameters: LearningParameters, backgro
     starts training the Agent.
     """
     global agents
-    print("--- Learning Parameters ---")
-    print(f"total episodes: {learning_parameters.totalTimeSteps}")
-    print(learning_parameters.selfPlayParameters)
-    print(learning_parameters.evaluationOptions)
-    print("---------------------------")
+
     background_tasks.add_task(agents[agent_id].learn, total_time_steps=learning_parameters.totalTimeSteps, self_play_parameters=learning_parameters.selfPlayParameters, evaluation_options=learning_parameters.evaluationOptions)
     return Response("training started", media_type="text/plain")
 
@@ -172,7 +166,6 @@ async def load(agent_id: UUID, load_request: LoadRequest):
     Load a specific model. If no directory path is provided loads latest.
     """
     global agents
-    print(load_request.agentType)
     if load_request.path is None:
         agent_path = f"{utils.get_save_dir()}/{load_request.gameName}/SB3Agent/{load_request.agentType}/{str(agent_id)}"
         files = os.listdir(f"{agent_path}/")
@@ -181,7 +174,6 @@ async def load(agent_id: UUID, load_request: LoadRequest):
     else:
         path = load_request.path
 
-    print(path)
 
     match load_request.agentType:
         case "DQN":
@@ -192,8 +184,6 @@ async def load(agent_id: UUID, load_request: LoadRequest):
             agents[agent_id] = Agent(agent_id, MaskablePPO.load(path), load_request.agentType, load_request.gameName)
 
     print(f"Agent Loaded: {path}")
-    print(agent_id)
-    print(agents)
 
 
 class SelfPlayResponse(BaseModel):
@@ -213,7 +203,6 @@ async def selfPlay(agent_id: UUID, predict_request: PredictRequest) -> SelfPlayR
     global agents
     action, _ = agents[agent_id].predict(np.array(predict_request.observation), np.array(predict_request.availableActions), predict_request.deterministic, True)
     self_play_response = SelfPlayResponse(action=action)
-    print(f"self play: {action}")
     return self_play_response
 
 
@@ -226,5 +215,5 @@ def exit_app():
 # starts the app
 if __name__ == '__main__':
     import uvicorn
-
-    uvicorn.run(app, host='0.0.0.0', port=utils.get_port())
+    print("started")
+    uvicorn.run(app, host='0.0.0.0', port=utils.get_port(), log_level=logging.WARNING)

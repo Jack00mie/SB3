@@ -27,3 +27,6 @@ def get_date_and_time() -> str:
 
 def get_latest_file(files: str):
     return max(files, key=lambda x: datetime.strptime(x, f"{DATE_FORMAT}.zip"))
+
+def get_gbg_ip() -> str:
+    return get_config()["gbg_ip"]

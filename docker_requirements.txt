@@ -1,0 +1,7 @@
+stable_baselines3
+sb3-contrib
+fastapi
+requests
+pydantic
+uvicorn
+PyYAML

@@ -37,14 +37,13 @@ class GBGEnvironmentClient(gym.Env):
 
         self.session = requests.Session()
         self.session.headers.update({'Connection': 'keep-alive'})
-        print("Session started")
 
     def reset(self, *, seed: int | None = None, options=None, ):
         """
         Mainly retrieves the first Observation from the GBG SB3 API.
         """
         super().reset(seed=seed)
-        response = self.session.post(f"http://127.0.0.1:{utils.get_gbg_port()}/reset")
+        response = self.session.post(f"http://{utils.get_gbg_ip()}:{utils.get_gbg_port()}/reset")
         response.raise_for_status()
         reset_response = ResetResponse(**response.json())
 
@@ -55,12 +54,11 @@ class GBGEnvironmentClient(gym.Env):
         """
         Sends the chosen action by the Agent to the GBG SB3 API and returns the resulting observation, reward and if the game is terminated.
         """
-        response = self.session.post(f"http://127.0.0.1:{utils.get_gbg_port()}/step", json={"action": int(action)})
+        response = self.session.post(f"http://{utils.get_gbg_ip()}:{utils.get_gbg_port()}/step", json={"action": int(action)})
         response.raise_for_status()
         step_response = StepResponse(**response.json())
 
         observation_vector = np.array(step_response.observationVector)
-        print(f"step_response: {step_response}")
         return observation_vector, step_response.reward, step_response.terminated, step_response.truncated, step_response.info
 
     def action_masks(self) -> np.ndarray[bool]:
@@ -68,12 +66,10 @@ class GBGEnvironmentClient(gym.Env):
         Only used by MaskablePPO. Retrieves the availableActions from the GBG SB3 API and converts them to a mask.
         :return: Action masks with true if valid and false if invalid
         """
-        response = self.session.get(f"http://127.0.0.1:{utils.get_gbg_port()}/availableActions")
+        response = self.session.get(f"http://{utils.get_gbg_ip()}:{utils.get_gbg_port()}/availableActions")
         response.raise_for_status()
         action_mask = np.zeros(self.action_space.n, dtype=bool)
         for a in response.json():
             action_mask[a] = True
 
-        print(f"action_mask_json: {response.json()}")
-        print(f"action mask: {action_mask}")
         return action_mask
