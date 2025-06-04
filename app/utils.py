@@ -30,3 +30,6 @@ def get_latest_file(files: str):
 
 def get_gbg_ip() -> str:
     return get_config()["gbg_ip"]
+
+def get_prefer_device() -> str:
+    return get_config()["prefer_device"]

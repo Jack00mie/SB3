@@ -1,4 +1,7 @@
 from __future__ import annotations
+
+import gc
+import time
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # Only imports the below statements during type checking
@@ -36,11 +39,10 @@ class Agent:
     agent_type: str
     best_win_rate: float = 0
     hyper_parameters: dict[str, Any] = {}
+    self_play_model: BaseAlgorithm | None
     # callbacks: list[BaseCallback] = []
 
-    use_model_lock = threading.Lock()
-
-    def __init__(self, agent_id: UUID, model: BaseAlgorithm, agent_type: str, game_name: str, hyper_parameters=None) -> None:
+    def __init__(self, agent_id: UUID, model: BaseAlgorithm, agent_type: str, game_name: str, self_play_model: [BaseAlgorithm | None] = None, hyper_parameters=None) -> None:
         if hyper_parameters is None:
             hyper_parameters = {}
         self.hyper_parameters = hyper_parameters
@@ -48,6 +50,15 @@ class Agent:
         self.baseAlgorithm = model
         self.game_name = game_name
         self.agent_type = agent_type
+        self.self_play_model = self_play_model
+
+        #polices = []
+
+        #for i in range(20):
+            #print(model.device)
+            #polices.append(self.get_copy_of_policy_for_self_play())
+            #time.sleep(3)
+            #print("appended")
 
     @classmethod
     def form_parameters(cls, agent_id, env: gym.Env, agent_type: str, game_name: str, base_parameters: dict, agent_parameters: dict,
@@ -55,8 +66,6 @@ class Agent:
         """
         Creates a new agent from parameters passed by GBG through the sb3_agent_service.
         """
-        print(th.version.cuda)
-        print(th.cuda.is_available())
         if th.cuda.is_available():
             print(f"Number of GPUs available: {th.cuda.device_count()}")
             for i in range(th.cuda.device_count()):
@@ -85,11 +94,24 @@ class Agent:
 
         match agent_type:
             case "DQN":
-                model = DQN("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters)
+                model = DQN("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters, device=utils.get_prefer_device())
             case "PPO":
-                model = PPO("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters)
+                model = PPO("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters, device=utils.get_prefer_device())
             case "MPPO":
-                model = MaskablePPO("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters)
+                model = MaskablePPO("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters, device=utils.get_prefer_device())
+        self_play_model: BaseAlgorithm
+        match agent_type:
+            case "DQN":
+                self_play_model = DQN("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters,
+                            device="cpu")
+            case "PPO":
+                self_play_model  = PPO("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters, **agent_parameters,
+                            device="cpu")
+            case "MPPO":
+                self_play_model  = MaskablePPO("MlpPolicy", env, policy_kwargs=network_parameters, **base_parameters,
+                                    **agent_parameters, device="cpu")
+        self_play_model.policy.eval()
+        self_play_model.policy.requires_grad_(False)
 
         network_parameters_flatten: dict[str, int] = {}
         if "net_arch" in network_parameters:
@@ -99,7 +121,7 @@ class Agent:
 
         print("Network:")
         print(model.policy)
-        return cls(agent_id, model, agent_type, game_name, hyper_parameters)
+        return cls(agent_id, model, agent_type, game_name,self_play_model, hyper_parameters)
 
     def learn(self, total_time_steps: int, evaluation_options: EvaluationOptions, self_play_parameters: [SelfPlayParameters | None] = None):
         """
@@ -166,6 +188,64 @@ class Agent:
     #         self.dump_logs(iteration)
     #
     #     self.train()
+    def append_latest_self_play(self): #TODO: rename policy to parmters
+        self.self_play_polices.append(self.latest_policy)
+
+        self.latest_policy = self.get_copy_of_policy_for_self_play()
+
+        for self_play_policy in self.self_play_polices:
+            print(self_play_policy.device)
+
+    def get_cpu_parameters(self, policy):
+        # Move each parameter tensor to CPU and clone it to avoid references to GPU memory
+        return {k: v.detach().cpu().clone() for k, v in policy.state_dict().items()}
+
+    def get_copy_of_policy_for_self_play(self) -> BasePolicy:
+
+        print(f"Memory allocated before: {th.cuda.memory_allocated() / 1024 ** 2:.2f} MB")
+        print(f"Memory reserved before: {th.cuda.memory_reserved() / 1024 ** 2:.2f} MB")
+
+        with th.no_grad():
+            parameters = self.get_cpu_parameters(self.baseAlgorithm.policy)
+            new_policy = copy.deepcopy(self.self_play_model.policy)
+            new_policy.load_state_dict(parameters)
+
+            print(f"Memory allocated before after: {th.cuda.memory_allocated() / 1024 ** 2:.2f} MB")
+            print(f"Memory reserved before after: {th.cuda.memory_reserved() / 1024 ** 2:.2f} MB")
+
+            return new_policy
+
+        # with th.no_grad():
+        #     original_device = self.baseAlgorithm.policy.device
+        #     print(original_device)
+        #     if original_device == th.device("cpu"):
+        #         policy_copy = copy.deepcopy(self.baseAlgorithm.policy)
+        #         return policy_copy
+        #
+        #     # Temporarily move to CPU for copying
+        #     self.baseAlgorithm.policy = self.baseAlgorithm.policy.cpu()
+        #     self.baseAlgorithm.policy.requires_grad_(False)
+        #     gc.collect()  # Help clear old GPU refs
+        #     th.cuda.empty_cache()
+        #
+        #     # Deepcopy while everything is on CPU
+        #     policy_copy = copy.deepcopy(self.baseAlgorithm.policy)
+        #
+        #     # Restore the original policy to its original device
+        #     self.baseAlgorithm.policy = self.baseAlgorithm.policy.to(original_device)
+        #     self.baseAlgorithm.policy.requires_grad_(True)
+        #
+        #     # Final cleanup
+        #     policy_copy.eval()
+        #     policy_copy.requires_grad_(False)
+        #     #policy_copy.device = th.device("cpu")  # Ensure internal references are CPU
+        #     gc.collect()
+        #     th.cuda.empty_cache()
+
+        # print(f"Memory allocated before after: {th.cuda.memory_allocated() / 1024 ** 2:.2f} MB")
+        # print(f"Memory reserved before after: {th.cuda.memory_reserved() / 1024 ** 2:.2f} MB")
+
+        # return policy_copy
 
     def save_model_if_better(self, win_rate: float):
         if win_rate > self.best_win_rate:
@@ -185,7 +265,8 @@ class Agent:
 
     def prepare_for_self_play(self, self_play_parameters: SelfPlayParameters) -> EveryNTimesteps:
         self.use_self_play = True
-        self.latest_policy = copy.deepcopy(self.baseAlgorithm.policy)
+        self.latest_policy = self.get_copy_of_policy_for_self_play()
+
         self.self_play_polices = deque(maxlen=self_play_parameters.policyWindowSize - 1)
         for _ in range(self_play_parameters.policyWindowSize - 1):
             self.self_play_polices.append(self.latest_policy)
@@ -206,28 +287,28 @@ class Agent:
         else:
             return random.choice(self.self_play_polices)
 
-    def predict_values(self, observation: np.ndarray, policy: BasePolicy) -> np.ndarray:
+    def predict_values(self, observation: np.ndarray, policy: BasePolicy, self_play: bool) -> np.ndarray:
         """
         Predicts the values for each action and returns them.
         """
-        if type(self.baseAlgorithm) is DQN:
-            with th.no_grad():
+        with th.no_grad():
+            if self_play:
+                tensor = policy.obs_to_tensor(observation)[0].cpu()
+            else:
                 tensor = policy.obs_to_tensor(observation)[0]
+            if type(self.baseAlgorithm) is DQN:
                 values = policy.q_net(tensor)
                 values = values.detach().to('cpu').numpy()
-        elif type(self.baseAlgorithm) is PPO:
-            with th.no_grad():
-                tensor = policy.obs_to_tensor(observation)[0]
+            elif type(self.baseAlgorithm) is PPO:
                 distribution = policy.get_distribution(tensor)
                 probs = distribution.distribution.probs
                 values = probs.detach().to('cpu').numpy()
-        elif type(self.baseAlgorithm) is MaskablePPO:
-            with th.no_grad():
-                tensor = policy.obs_to_tensor(observation)[0]
+            elif type(self.baseAlgorithm) is MaskablePPO:
                 distribution = policy.get_distribution(tensor)
                 probs = distribution.distribution.probs
                 values = probs.detach().to('cpu').numpy()
-
+            del tensor
+            #th.cuda.empty_cache()
         return values[0]
 
     def predict(self, observation: np.ndarray, available_actions: np.ndarray, deterministic: bool = True, for_self_play: bool = False) -> tuple[int, list[float]]:
@@ -241,7 +322,7 @@ class Agent:
         if for_self_play:
             policy = self.get_self_play_policy()
 
-        values = self.predict_values(observation, policy)
+        values = self.predict_values(observation, policy, self_play=for_self_play)
 
         available_values: list[float] = []
         best_action: int = int(available_actions[0])
@@ -283,9 +364,7 @@ class AddToSelfPlay(BaseCallback):
     This callback adds the current policy to the self_play_policies of the agent.
     """
     def _on_step(self) -> bool:
-        self.agent.self_play_polices.append(self.agent.latest_policy)
-        with self.agent.use_model_lock:
-            self.agent.latest_policy = copy.deepcopy(self.model.policy)
+        self.agent.append_latest_self_play()
         return True
 
     def __init__(self, agent: Agent, verbose: int = 0):
@@ -304,6 +383,7 @@ class EvaluationCallback(BaseCallback):
         self.evaluation_options = evaluation_options
 
     def _on_step(self) -> bool:
+        start_time = time.time()
         response = requests.post(f"http://{utils.get_gbg_ip()}:{utils.get_gbg_port()}/eval", json={
             "opponentName": self.evaluation_options.opponent,
             "numberOfGames": self.evaluation_options.numberOfGames # number of games for each player Postion. Total number of Game = numberOfgames * Player
@@ -316,6 +396,8 @@ class EvaluationCallback(BaseCallback):
         if self.evaluation_options.saveBest:
             self.agent.save_model_if_better(average_reward)
         self.agent.save_eval_results_to_tensorboard(response["wins"], response["ties"], response["losses"], average_reward)
+        end_time = time.time()
+        print(f"Time elapsed for evaluation: {end_time - start_time}")
         return True
 
 
