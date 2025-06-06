@@ -3,7 +3,7 @@ import yaml
 from typing import Dict, Any
 
 def get_config() -> Dict[str, Any]:
-    with open("config.yaml", "r", encoding="utf-8") as file:
+    with open("./app/config.yaml", "r", encoding="utf-8") as file:
         config = yaml.safe_load(file)
 
     return config

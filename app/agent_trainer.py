@@ -153,41 +153,7 @@ class Agent:
         requests.post(f"http://{utils.get_gbg_ip()}:{utils.get_gbg_port()}/trainingFinished", "Training finished")
         print("Training complete.")
 
-    # def train_one_episode_off_policy(self):
-    #     rollout = self.baseAlgorithm.collect_rollouts(
-    #         self.baseAlgorithm.env,
-    #         train_freq=self.baseAlgorithm.train_freq,
-    #         action_noise=self.baseAlgorithm.action_noise,
-    #         callback=self.callbacks,
-    #         learning_starts=self.baseAlgorithm.learning_starts,
-    #         replay_buffer=self.baseAlgorithm.replay_buffer,
-    #         log_interval=4,
-    #     )
-    #
-    #     if self.baseAlgorithm.num_timesteps > 0 and self.baseAlgorithm.num_timesteps > self.baseAlgorithm.learning_starts:
-    #         # If no `gradient_steps` is specified,
-    #         # do as many gradients steps as steps performed during the rollout
-    #         gradient_steps = self.baseAlgorithm.gradient_steps if self.baseAlgorithm.gradient_steps >= 0 else rollout.episode_timesteps
-    #         # Special case when the user passes `gradient_steps=0`
-    #         if gradient_steps > 0:
-    #             self.baseAlgorithm.train(batch_size=self.baseAlgorithm.batch_size, gradient_steps=gradient_steps)
-    #
-    #
-    # def train_one_episode_off_policy(self):
-    #     continue_training = self.baseAlgorithm.collect_rollouts(self.baseAlgorithm.env, callback, self.baseAlgorithm.rollout_buffer, n_rollout_steps=self.baseAlgorithm.n_steps)
-    #
-    #     if not continue_training:
-    #         break
-    #
-    #     iteration += 1
-    #     self._update_current_progress_remaining(self.num_timesteps, total_timesteps)
-    #
-    #     # Display training infos
-    #     if log_interval is not None and iteration % log_interval == 0:
-    #         assert self.ep_info_buffer is not None
-    #         self.dump_logs(iteration)
-    #
-    #     self.train()
+
     def append_latest_self_play(self): #TODO: rename policy to parmters
         self.self_play_polices.append(self.latest_policy)
 
@@ -215,37 +181,7 @@ class Agent:
 
             return new_policy
 
-        # with th.no_grad():
-        #     original_device = self.baseAlgorithm.policy.device
-        #     print(original_device)
-        #     if original_device == th.device("cpu"):
-        #         policy_copy = copy.deepcopy(self.baseAlgorithm.policy)
-        #         return policy_copy
-        #
-        #     # Temporarily move to CPU for copying
-        #     self.baseAlgorithm.policy = self.baseAlgorithm.policy.cpu()
-        #     self.baseAlgorithm.policy.requires_grad_(False)
-        #     gc.collect()  # Help clear old GPU refs
-        #     th.cuda.empty_cache()
-        #
-        #     # Deepcopy while everything is on CPU
-        #     policy_copy = copy.deepcopy(self.baseAlgorithm.policy)
-        #
-        #     # Restore the original policy to its original device
-        #     self.baseAlgorithm.policy = self.baseAlgorithm.policy.to(original_device)
-        #     self.baseAlgorithm.policy.requires_grad_(True)
-        #
-        #     # Final cleanup
-        #     policy_copy.eval()
-        #     policy_copy.requires_grad_(False)
-        #     #policy_copy.device = th.device("cpu")  # Ensure internal references are CPU
-        #     gc.collect()
-        #     th.cuda.empty_cache()
 
-        # print(f"Memory allocated before after: {th.cuda.memory_allocated() / 1024 ** 2:.2f} MB")
-        # print(f"Memory reserved before after: {th.cuda.memory_reserved() / 1024 ** 2:.2f} MB")
-
-        # return policy_copy
 
     def save_model_if_better(self, win_rate: float):
         if win_rate > self.best_win_rate:
